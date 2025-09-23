@@ -16,6 +16,7 @@ const gameContainer = document.getElementById('game-container');
 const mapNameDisplay = document.getElementById('map-name-display');
 const pauseScreen = document.getElementById('pause-screen');
 const pauseMenuList = document.getElementById('pause-menu-list');
+const statusScreen = document.getElementById('status-screen');
 
 // --- Constants ---
 const TILE_SIZE = 8;
@@ -128,7 +129,7 @@ const player = {
 };
 
 // --- State Variables ---
-let gameState = 'title'; // title, map_select, playing
+let gameState = 'title'; // title, map_select, playing, status_screen
 let currentMapId = 'starting_plains';
 let imagesLoaded = 0;
 const totalImages = 2;
@@ -226,7 +227,7 @@ function hideMessage() {
 
 function displayPauseMenu() {
     pauseMenuList.innerHTML = '';
-    const items = ['Resume', 'Quit to Title'];
+    const items = ['Resume', 'Status', 'Quit to Title'];
     items.forEach((item, index) => {
         const li = document.createElement('li');
         li.textContent = item;
@@ -242,6 +243,12 @@ function handlePauseSelection() {
     switch(selection) {
         case 'Resume':
             togglePause();
+            break;
+        case 'Status':
+            pauseScreen.classList.add('hidden');
+            statusScreen.classList.remove('hidden');
+            gameState = 'status_screen';
+            updateStatusDisplay();
             break;
         case 'Quit to Title':
             isPaused = false;
@@ -266,7 +273,6 @@ function updateStatusDisplay() {
 function togglePause() {
     isPaused = !isPaused;
     if (isPaused) {
-        updateStatusDisplay();
         pauseMenuIndex = 0;
         displayPauseMenu();
         pauseScreen.classList.remove('hidden');
@@ -390,6 +396,17 @@ window.addEventListener('keydown', (e) => {
             case 'Enter':
                 initializeGamePlay();
                 break;
+        }
+        return;
+    }
+
+    if (gameState === 'status_screen') {
+        if (e.key === 'Escape' || e.key === 'Enter') {
+            statusScreen.classList.add('hidden');
+            pauseScreen.classList.remove('hidden');
+            gameState = 'playing'; // Return to playing state, but still paused
+            isPaused = true; // Ensure game remains paused
+            displayPauseMenu(); // Re-display pause menu to ensure correct selection
         }
         return;
     }

@@ -30,6 +30,8 @@
         }
         .fullscreen-menu p {
             font-size: 20px;
+        }
+        .blinking-message {
             animation: blink 1.5s linear infinite;
         }
         .fullscreen-menu ul {
@@ -133,28 +135,12 @@
         #shop-menu li.selected {
             background-color: #555;
         }
-        .pause-container {
-            display: flex;
-            justify-content: space-around;
-            align-items: flex-start;
-            width: 100%;
-            max-width: 600px;
-            margin: 20px auto;
-            text-align: left;
-        }
-        #status-display h3 {
-            text-align: center;
-            margin-top: 0;
-        }
-        #status-display p {
-            animation: none;
-        }
     </style>
 </head>
 <body>
     <div id="title-screen" class="fullscreen-menu">
         <h1>Pixel RPG</h1>
-        <p>Press Enter to Start</p>
+        <p class="blinking-message">Press Enter to Start</p>
     </div>
 
     <div id="map-select-screen" class="fullscreen-menu hidden">
@@ -184,19 +170,17 @@
 
     <div id="pause-screen" class="fullscreen-menu hidden">
         <h2>Paused</h2>
-        <div class="pause-container">
-            <div id="pause-menu">
-                <ul id="pause-menu-list"></ul>
-            </div>
-            <div id="status-display">
-                <h3>Status</h3>
-                <p>Health: <span id="status-health"></span></p>
-                <p>Attack: <span id="status-attack"></span></p>
-                <p>Defense: <span id="status-defense"></span></p>
-                <p>Speed: <span id="status-speed"></span></p>
-                <p>Magic: <span id="status-magic"></span></p>
-            </div>
-        </div>
+        <ul id="pause-menu-list"></ul>
+    </div>
+
+    <div id="status-screen" class="fullscreen-menu hidden">
+        <h2>Status</h2>
+        <p>Health: <span id="status-health"></span></p>
+        <p>Attack: <span id="status-attack"></span></p>
+        <p>Defense: <span id="status-defense"></span></p>
+        <p>Speed: <span id="status-speed"></span></p>
+        <p>Magic: <span id="status-magic"></span></p>
+        <p class="press-enter">Press Enter to return</p>
     </div>
 
     <script src="script.js"></script>
