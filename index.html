@@ -43,7 +43,7 @@
             padding: 8px;
         }
         .fullscreen-menu li.selected {
-            background-color: #333;
+            background-color: #555;
         }
         .fullscreen-menu li.locked {
             color: #555;
@@ -133,6 +133,22 @@
         #shop-menu li.selected {
             background-color: #555;
         }
+        .pause-container {
+            display: flex;
+            justify-content: space-around;
+            align-items: flex-start;
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            text-align: left;
+        }
+        #status-display h3 {
+            text-align: center;
+            margin-top: 0;
+        }
+        #status-display p {
+            animation: none;
+        }
     </style>
 </head>
 <body>
@@ -163,6 +179,23 @@
         <div id="shop-menu" class="hidden">
             <h3></h3>
             <ul id="weapon-list"></ul>
+        </div>
+    </div>
+
+    <div id="pause-screen" class="fullscreen-menu hidden">
+        <h2>Paused</h2>
+        <div class="pause-container">
+            <div id="pause-menu">
+                <ul id="pause-menu-list"></ul>
+            </div>
+            <div id="status-display">
+                <h3>Status</h3>
+                <p>Health: <span id="status-health"></span></p>
+                <p>Attack: <span id="status-attack"></span></p>
+                <p>Defense: <span id="status-defense"></span></p>
+                <p>Speed: <span id="status-speed"></span></p>
+                <p>Magic: <span id="status-magic"></span></p>
+            </div>
         </div>
     </div>
 

@@ -14,6 +14,8 @@ const mapSelectScreen = document.getElementById('map-select-screen');
 const mapList = document.getElementById('map-list');
 const gameContainer = document.getElementById('game-container');
 const mapNameDisplay = document.getElementById('map-name-display');
+const pauseScreen = document.getElementById('pause-screen');
+const pauseMenuList = document.getElementById('pause-menu-list');
 
 // --- Constants ---
 const TILE_SIZE = 8;
@@ -118,6 +120,10 @@ const player = {
     money: 10000,
     maxHealth: 100,
     currentHealth: 100,
+    attack: 1,
+    defense: 1,
+    speed: 1,
+    magic: 1,
     inventory: []
 };
 
@@ -131,6 +137,8 @@ let isShopOpen = false;
 let shopState = 'category';
 let selectedIndex = 0;
 let currentShopList = [];
+let isPaused = false;
+let pauseMenuIndex = 0;
 
 // --- Game Flow Functions ---
 function showMapSelect() {
@@ -214,6 +222,59 @@ function showMessage(message, callback) {
 function hideMessage() {
     messageBox.classList.add('hidden');
     isMessageVisible = false;
+}
+
+function displayPauseMenu() {
+    pauseMenuList.innerHTML = '';
+    const items = ['Resume', 'Quit to Title'];
+    items.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.textContent = item;
+        if (index === pauseMenuIndex) {
+            li.classList.add('selected');
+        }
+        pauseMenuList.appendChild(li);
+    });
+}
+
+function handlePauseSelection() {
+    const selection = pauseMenuList.getElementsByTagName('li')[pauseMenuIndex].textContent;
+    switch(selection) {
+        case 'Resume':
+            togglePause();
+            break;
+        case 'Quit to Title':
+            isPaused = false;
+            pauseScreen.classList.add('hidden');
+            gameContainer.style.filter = 'none';
+            gameContainer.classList.add('hidden');
+            titleScreen.classList.remove('hidden');
+            document.body.style.backgroundColor = '#000';
+            gameState = 'title';
+            break;
+    }
+}
+
+function updateStatusDisplay() {
+    document.getElementById('status-health').textContent = `${player.currentHealth} / ${player.maxHealth}`;
+    document.getElementById('status-attack').textContent = player.attack;
+    document.getElementById('status-defense').textContent = player.defense;
+    document.getElementById('status-speed').textContent = player.speed;
+    document.getElementById('status-magic').textContent = player.magic;
+}
+
+function togglePause() {
+    isPaused = !isPaused;
+    if (isPaused) {
+        updateStatusDisplay();
+        pauseMenuIndex = 0;
+        displayPauseMenu();
+        pauseScreen.classList.remove('hidden');
+        gameContainer.style.filter = 'blur(3px)';
+    } else {
+        pauseScreen.classList.add('hidden');
+        gameContainer.style.filter = 'none';
+    }
 }
 
 // --- Shop Logic (and other gameplay logic) remains largely the same ---
@@ -334,7 +395,32 @@ window.addEventListener('keydown', (e) => {
     }
 
     // --- From here on, gameState is 'playing' ---
-    if (isMessageVisible) return;
+
+    if (isPaused) {
+        const itemCount = pauseMenuList.getElementsByTagName('li').length;
+        switch(e.key) {
+            case 'ArrowUp':
+                pauseMenuIndex = (pauseMenuIndex - 1 + itemCount) % itemCount;
+                displayPauseMenu();
+                break;
+            case 'ArrowDown':
+                pauseMenuIndex = (pauseMenuIndex + 1) % itemCount;
+                displayPauseMenu();
+                break;
+            case 'Enter':
+                handlePauseSelection();
+                break;
+            case 'Escape':
+                togglePause();
+                break;
+        }
+        return; // Block all other game input while paused
+    }
+
+    // Message listener handles its own 'Enter' key, we just need to block other inputs.
+    if (isMessageVisible) {
+        return;
+    }
 
     if (isShopOpen) {
         let listSize = itemList.getElementsByTagName('li').length;
@@ -375,6 +461,13 @@ window.addEventListener('keydown', (e) => {
                 }
                 break;
         }
+        return;
+    }
+
+    // --- Default playing state actions ---
+
+    if (e.key === 'Escape') {
+        togglePause();
         return;
     }
 
