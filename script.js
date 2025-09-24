@@ -17,6 +17,9 @@ const mapNameDisplay = document.getElementById('map-name-display');
 const pauseScreen = document.getElementById('pause-screen');
 const pauseMenuList = document.getElementById('pause-menu-list');
 const statusScreen = document.getElementById('status-screen');
+const equipmentScreen = document.getElementById('equipment-screen');
+const equippedItemsList = document.getElementById('equipped-items-list');
+const inventoryItemsList = document.getElementById('inventory-items-list');
 
 // --- Constants ---
 const TILE_SIZE = 8;
@@ -33,25 +36,25 @@ const TILE_MAPPING = {
 
 // --- Data ---
 const weapons = [
-    { name: 'Wooden Stick', price: 10 },
-    { name: 'Dagger', price: 150 },
-    { name: 'Short Sword', price: 400 },
-    { name: 'Long Sword', price: 850 },
-    { name: 'Broadsword', price: 1500 },
-    { name: 'Battle Axe', price: 2300 },
-    { name: 'Spear', price: 3000 },
-    { name: 'Mithril Sword', price: 5000 },
-    { name: 'Magic Staff', price: 7500 },
-    { name: 'Legendary Blade', price: 12000 },
+    { name: 'Wooden Stick', price: 10, attack: 2, type: 'weapon' },
+    { name: 'Dagger', price: 150, attack: 5, type: 'weapon' },
+    { name: 'Short Sword', price: 400, attack: 8, type: 'weapon' },
+    { name: 'Long Sword', price: 850, attack: 12, type: 'weapon' },
+    { name: 'Broadsword', price: 1500, attack: 18, type: 'weapon' },
+    { name: 'Battle Axe', price: 2300, attack: 25, type: 'weapon' },
+    { name: 'Spear', price: 3000, attack: 30, type: 'weapon' },
+    { name: 'Mithril Sword', price: 5000, attack: 40, type: 'weapon' },
+    { name: 'Magic Staff', price: 7500, attack: 35, magic: 15, type: 'weapon' },
+    { name: 'Legendary Blade', price: 12000, attack: 55, type: 'weapon' },
 ];
 const armors = [
-    { name: 'Leather Clothes', price: 80 },
-    { name: 'Leather Shield', price: 120 },
-    { name: 'Iron Shield', price: 450 },
-    { name: 'Leather Armor', price: 700 },
-    { name: 'Chain Mail', price: 1600 },
-    { name: 'Plate Mail', price: 3500 },
-    { name: 'Magic Robe', price: 6000 },
+    { name: 'Leather Clothes', price: 80, defense: 3, type: 'armor' },
+    { name: 'Leather Shield', price: 120, defense: 2, type: 'shield' },
+    { name: 'Iron Shield', price: 450, defense: 5, type: 'shield' },
+    { name: 'Leather Armor', price: 700, defense: 8, type: 'armor' },
+    { name: 'Chain Mail', price: 1600, defense: 15, type: 'armor' },
+    { name: 'Plate Mail', price: 3500, defense: 25, type: 'armor' },
+    { name: 'Magic Robe', price: 6000, defense: 18, magic: 10, type: 'armor' },
 ];
 const shopCategories = [
     { name: 'Buy Weapons' },
@@ -125,11 +128,16 @@ const player = {
     defense: 1,
     speed: 1,
     magic: 1,
-    inventory: []
+    inventory: [],
+    equipment: {
+        weapon: null,
+        armor: null,
+        shield: null
+    }
 };
 
 // --- State Variables ---
-let gameState = 'title'; // title, map_select, playing, status_screen
+let gameState = 'title'; // title, map_select, playing, status_screen, equipment_screen
 let currentMapId = 'starting_plains';
 let imagesLoaded = 0;
 const totalImages = 2;
@@ -140,6 +148,8 @@ let selectedIndex = 0;
 let currentShopList = [];
 let isPaused = false;
 let pauseMenuIndex = 0;
+let equipmentMenuState = 'equipment'; // 'equipment' or 'inventory'
+let equipmentMenuIndex = 0;
 
 // --- Game Flow Functions ---
 function showMapSelect() {
@@ -227,7 +237,7 @@ function hideMessage() {
 
 function displayPauseMenu() {
     pauseMenuList.innerHTML = '';
-    const items = ['Resume', 'Status', 'Quit to Title'];
+    const items = ['Resume', 'Status', 'Equipment', 'Quit to Title'];
     items.forEach((item, index) => {
         const li = document.createElement('li');
         li.textContent = item;
@@ -250,6 +260,12 @@ function handlePauseSelection() {
             gameState = 'status_screen';
             updateStatusDisplay();
             break;
+        case 'Equipment':
+            pauseScreen.classList.add('hidden');
+            equipmentScreen.classList.remove('hidden');
+            gameState = 'equipment_screen';
+            updateEquipmentDisplay();
+            break;
         case 'Quit to Title':
             isPaused = false;
             pauseScreen.classList.add('hidden');
@@ -262,12 +278,90 @@ function handlePauseSelection() {
     }
 }
 
+function handleEquipAction() {
+    if (equipmentMenuState === 'equipment') {
+        // Unequip action
+        const equipmentSlots = ['weapon', 'armor', 'shield'];
+        const slotToUnequip = equipmentSlots[equipmentMenuIndex];
+        const itemToUnequip = player.equipment[slotToUnequip];
+
+        if (itemToUnequip) {
+            player.inventory.push(itemToUnequip);
+            player.equipment[slotToUnequip] = null;
+        }
+    } else { // 'inventory'
+        // Equip action
+        const itemToEquip = player.inventory[equipmentMenuIndex];
+        if (!itemToEquip) return;
+
+        const itemType = itemToEquip.type;
+
+        let slotToEquip = null;
+        if (itemType === 'weapon') slotToEquip = 'weapon';
+        else if (itemType === 'armor') slotToEquip = 'armor';
+        else if (itemType === 'shield') slotToEquip = 'shield';
+
+        if (slotToEquip) {
+            const currentlyEquipped = player.equipment[slotToEquip];
+            if (currentlyEquipped) {
+                player.inventory.push(currentlyEquipped);
+            }
+
+            player.equipment[slotToEquip] = itemToEquip;
+            player.inventory.splice(equipmentMenuIndex, 1);
+        }
+    }
+
+    equipmentMenuIndex = 0;
+    updateEquipmentDisplay();
+    updateUI();
+}
+
+function updateEquipmentDisplay() {
+    equippedItemsList.innerHTML = '';
+    inventoryItemsList.innerHTML = '';
+
+    const equipmentSlots = [
+        { name: 'Weapon', item: player.equipment.weapon },
+        { name: 'Armor', item: player.equipment.armor },
+        { name: 'Shield', item: player.equipment.shield },
+    ];
+
+    equipmentSlots.forEach((slot, index) => {
+        const li = document.createElement('li');
+        li.textContent = `${slot.name}: ${slot.item ? slot.item.name : 'None'}`;
+        if (equipmentMenuState === 'equipment' && index === equipmentMenuIndex) {
+            li.classList.add('selected');
+        }
+        equippedItemsList.appendChild(li);
+    });
+
+    player.inventory.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.textContent = item.name;
+        if (equipmentMenuState === 'inventory' && index === equipmentMenuIndex) {
+            li.classList.add('selected');
+        }
+        inventoryItemsList.appendChild(li);
+    });
+}
+
 function updateStatusDisplay() {
+    const { weapon, armor, shield } = player.equipment;
+    const attackBonus = (weapon?.attack || 0);
+    const defenseBonus = (armor?.defense || 0) + (shield?.defense || 0);
+    const magicBonus = (weapon?.magic || 0) + (armor?.magic || 0);
+
+    const totalAttack = player.attack + attackBonus;
+    const totalDefense = player.defense + defenseBonus;
+    const totalSpeed = player.speed; // No speed bonus from equipment yet
+    const totalMagic = player.magic + magicBonus;
+
     document.getElementById('status-health').textContent = `${player.currentHealth} / ${player.maxHealth}`;
-    document.getElementById('status-attack').textContent = player.attack;
-    document.getElementById('status-defense').textContent = player.defense;
-    document.getElementById('status-speed').textContent = player.speed;
-    document.getElementById('status-magic').textContent = player.magic;
+    document.getElementById('status-attack').textContent = `${totalAttack} (${player.attack} + ${attackBonus})`;
+    document.getElementById('status-defense').textContent = `${totalDefense} (${player.defense} + ${defenseBonus})`;
+    document.getElementById('status-speed').textContent = totalSpeed;
+    document.getElementById('status-magic').textContent = `${totalMagic} (${player.magic} + ${magicBonus})`;
 }
 
 function togglePause() {
@@ -336,7 +430,7 @@ function buyItem() {
 
     if (player.money >= item.price) {
         player.money -= item.price;
-        player.inventory.push(item.name);
+        player.inventory.push(item);
         updateUI();
         showMessage(`You bought a ${item.name}.`);
     } else {
@@ -407,6 +501,54 @@ window.addEventListener('keydown', (e) => {
             gameState = 'playing'; // Return to playing state, but still paused
             isPaused = true; // Ensure game remains paused
             displayPauseMenu(); // Re-display pause menu to ensure correct selection
+        }
+        return;
+    }
+
+    if (gameState === 'equipment_screen') {
+        let listSize;
+        switch (e.key) {
+            case 'Escape':
+                equipmentScreen.classList.add('hidden');
+                pauseScreen.classList.remove('hidden');
+                gameState = 'playing';
+                isPaused = true;
+                // Reset equipment menu state for next time
+                equipmentMenuState = 'equipment';
+                equipmentMenuIndex = 0;
+                displayPauseMenu();
+                break;
+            case 'ArrowRight':
+                if (equipmentMenuState === 'equipment') {
+                    equipmentMenuState = 'inventory';
+                    equipmentMenuIndex = 0;
+                    updateEquipmentDisplay();
+                }
+                break;
+            case 'ArrowLeft':
+                if (equipmentMenuState === 'inventory') {
+                    equipmentMenuState = 'equipment';
+                    equipmentMenuIndex = 0;
+                    updateEquipmentDisplay();
+                }
+                break;
+            case 'ArrowUp':
+                listSize = (equipmentMenuState === 'equipment') ? 3 : player.inventory.length;
+                if (listSize > 0) {
+                    equipmentMenuIndex = (equipmentMenuIndex - 1 + listSize) % listSize;
+                    updateEquipmentDisplay();
+                }
+                break;
+            case 'ArrowDown':
+                listSize = (equipmentMenuState === 'equipment') ? 3 : player.inventory.length;
+                if (listSize > 0) {
+                    equipmentMenuIndex = (equipmentMenuIndex + 1) % listSize;
+                    updateEquipmentDisplay();
+                }
+                break;
+            case 'Enter':
+                handleEquipAction();
+                break;
         }
         return;
     }
