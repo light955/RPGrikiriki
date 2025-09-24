@@ -56,9 +56,19 @@ const armors = [
     { name: 'Plate Mail', price: 3500, defense: 25, type: 'armor' },
     { name: 'Magic Robe', price: 6000, defense: 18, magic: 10, type: 'armor' },
 ];
+const shoes = [
+    { name: 'Leather Boots', price: 250, speed: 2, type: 'shoes' },
+    { name: 'Iron Greaves', price: 600, speed: 3, defense: 2, type: 'shoes' },
+    { name: 'Speed Shoes', price: 1500, speed: 5, type: 'shoes' }
+];
+const accessories = [
+    { name: 'Ring of Power', price: 1200, magic: 5, type: 'accessory' }
+];
 const shopCategories = [
     { name: 'Buy Weapons' },
     { name: 'Buy Armor' },
+    { name: 'Buy Shoes' },
+    { name: 'Buy Accessories' },
     { name: 'Exit' },
 ];
 
@@ -132,7 +142,9 @@ const player = {
     equipment: {
         weapon: null,
         armor: null,
-        shield: null
+        shield: null,
+        shoes: null,
+        accessory: null
     }
 };
 
@@ -281,7 +293,7 @@ function handlePauseSelection() {
 function handleEquipAction() {
     if (equipmentMenuState === 'equipment') {
         // Unequip action
-        const equipmentSlots = ['weapon', 'armor', 'shield'];
+        const equipmentSlots = ['weapon', 'armor', 'shield', 'shoes', 'accessory'];
         const slotToUnequip = equipmentSlots[equipmentMenuIndex];
         const itemToUnequip = player.equipment[slotToUnequip];
 
@@ -300,6 +312,8 @@ function handleEquipAction() {
         if (itemType === 'weapon') slotToEquip = 'weapon';
         else if (itemType === 'armor') slotToEquip = 'armor';
         else if (itemType === 'shield') slotToEquip = 'shield';
+        else if (itemType === 'shoes') slotToEquip = 'shoes';
+        else if (itemType === 'accessory') slotToEquip = 'accessory';
 
         if (slotToEquip) {
             const currentlyEquipped = player.equipment[slotToEquip];
@@ -325,6 +339,8 @@ function updateEquipmentDisplay() {
         { name: 'Weapon', item: player.equipment.weapon },
         { name: 'Armor', item: player.equipment.armor },
         { name: 'Shield', item: player.equipment.shield },
+        { name: 'Shoes', item: player.equipment.shoes },
+        { name: 'Accessory', item: player.equipment.accessory },
     ];
 
     equipmentSlots.forEach((slot, index) => {
@@ -347,20 +363,21 @@ function updateEquipmentDisplay() {
 }
 
 function updateStatusDisplay() {
-    const { weapon, armor, shield } = player.equipment;
+    const { weapon, armor, shield, shoes, accessory } = player.equipment;
     const attackBonus = (weapon?.attack || 0);
-    const defenseBonus = (armor?.defense || 0) + (shield?.defense || 0);
-    const magicBonus = (weapon?.magic || 0) + (armor?.magic || 0);
+    const defenseBonus = (armor?.defense || 0) + (shield?.defense || 0) + (shoes?.defense || 0) + (accessory?.defense || 0);
+    const magicBonus = (weapon?.magic || 0) + (armor?.magic || 0) + (shoes?.magic || 0) + (accessory?.magic || 0);
+    const speedBonus = (shoes?.speed || 0) + (accessory?.speed || 0);
 
     const totalAttack = player.attack + attackBonus;
     const totalDefense = player.defense + defenseBonus;
-    const totalSpeed = player.speed; // No speed bonus from equipment yet
+    const totalSpeed = player.speed + speedBonus;
     const totalMagic = player.magic + magicBonus;
 
     document.getElementById('status-health').textContent = `${player.currentHealth} / ${player.maxHealth}`;
     document.getElementById('status-attack').textContent = `${totalAttack} (${player.attack} + ${attackBonus})`;
     document.getElementById('status-defense').textContent = `${totalDefense} (${player.defense} + ${defenseBonus})`;
-    document.getElementById('status-speed').textContent = totalSpeed;
+    document.getElementById('status-speed').textContent = `${totalSpeed} (${player.speed} + ${speedBonus})`;
     document.getElementById('status-magic').textContent = `${totalMagic} (${player.magic} + ${magicBonus})`;
 }
 
@@ -397,7 +414,7 @@ function displayShopList(list, title) {
     currentShopList = list;
     
     const itemsToDisplay = [...list];
-    if (shopState === 'weapons' || shopState === 'armors') {
+    if (shopState === 'weapons' || shopState === 'armors' || shopState === 'accessories') {
         itemsToDisplay.push({ name: 'Back' });
     }
 
@@ -449,6 +466,18 @@ function drawMap() {
             const dx = x * TILE_SIZE;
             const dy = y * TILE_SIZE;
             ctx.drawImage(mapImage, sx, sy, TILE_SIZE, TILE_SIZE, dx, dy, TILE_SIZE, TILE_SIZE);
+        }
+    }
+
+    // After drawing all tiles, draw the text on top
+    ctx.fillStyle = 'white';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    for (let y = 0; y < MAP_HEIGHT_IN_TILES; y++) {
+        for (let x = 0; x < MAP_WIDTH_IN_TILES; x++) {
+            if (currentMapData[y][x] === TILE_MAPPING.WEAPON_SHOP) {
+                ctx.fillText('装備屋さん', x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE - 5);
+            }
         }
     }
 }
@@ -533,14 +562,14 @@ window.addEventListener('keydown', (e) => {
                 }
                 break;
             case 'ArrowUp':
-                listSize = (equipmentMenuState === 'equipment') ? 3 : player.inventory.length;
+                listSize = (equipmentMenuState === 'equipment') ? 5 : player.inventory.length;
                 if (listSize > 0) {
                     equipmentMenuIndex = (equipmentMenuIndex - 1 + listSize) % listSize;
                     updateEquipmentDisplay();
                 }
                 break;
             case 'ArrowDown':
-                listSize = (equipmentMenuState === 'equipment') ? 3 : player.inventory.length;
+                listSize = (equipmentMenuState === 'equipment') ? 5 : player.inventory.length;
                 if (listSize > 0) {
                     equipmentMenuIndex = (equipmentMenuIndex + 1) % listSize;
                     updateEquipmentDisplay();
@@ -603,6 +632,14 @@ window.addEventListener('keydown', (e) => {
                         shopState = 'armors';
                         selectedIndex = 0;
                         displayShopList(armors, 'Armor');
+                    } else if (category === 'Buy Shoes') {
+                        shopState = 'shoes';
+                        selectedIndex = 0;
+                        displayShopList(shoes, 'Shoes');
+                    } else if (category === 'Buy Accessories') {
+                        shopState = 'accessories';
+                        selectedIndex = 0;
+                        displayShopList(accessories, 'Accessories');
                     } else if (category === 'Exit') {
                         closeShop();
                     }
@@ -611,7 +648,7 @@ window.addEventListener('keydown', (e) => {
                 }
                 break;
             case 'Escape':
-                 if (shopState === 'weapons' || shopState === 'armors') {
+                 if (shopState === 'weapons' || shopState === 'armors' || shopState === 'shoes' || shopState === 'accessories') {
                     shopState = 'category';
                     selectedIndex = 0;
                     displayShopList(shopCategories, 'Weapon Shop');
