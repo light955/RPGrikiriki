@@ -9,7 +9,9 @@ const TILE_MAPPING = {
     LAKE: 1,
     ROCK: 2,
     GRASS: 3,
-    WEAPON_SHOP: 4
+    WEAPON_SHOP: 4,
+    FOREST: 6, // Corrected to 6
+    CHESTNUT: 7  // Swapped from 6
 };
 
 // =================================================================================
@@ -70,7 +72,33 @@ class GameData {
                     ]
                 },
             },
-            map_2: { name: '？？？？？', unlocked: false, config: { rocks: [], shops: [] } },
+            map_2: {
+                name: '静寂の森',
+                unlocked: true,
+                config: {
+                    rocks: [],
+                    forest: [
+                        // Outer walls
+                        ...Array.from({length: 45}, (_, i) => ({x: 5 + i, y: 5})), 
+                        ...Array.from({length: 45}, (_, i) => ({x: 5 + i, y: 34})), 
+                                                ...Array.from({length: 13}, (_, i) => ({x: 5, y: 6 + i})), // Upper part of left wall
+                        ...Array.from({length: 12}, (_, i) => ({x: 5, y: 22 + i})), // Lower part of left wall 
+                        ...Array.from({length: 28}, (_, i) => ({x: 50, y: 6 + i})), 
+                        // Maze walls
+                                                ...Array.from({length: 14}, (_, i) => ({x: 15, y: 5 + i})), // Upper part of 1st inner wall
+                        ...Array.from({length: 13}, (_, i) => ({x: 15, y: 22 + i})), // Lower part of 1st inner wall 
+                                                ...Array.from({length: 30}, (_, i) => ({x: 35, y: 10 + i})), 
+                        ...Array.from({length: 20}, (_, i) => ({x: 15 + i, y: 25})), 
+                        ...Array.from({length: 20}, (_, i) => ({x: 25 + i, y: 15})), 
+                    ],
+                    chestnuts: [
+                        {x: 8, y: 8}, {x: 48, y: 32}, {x: 30, y: 18}, {x: 17, y: 28}
+                    ],
+                    shops: [
+                        { x: 48, y: 8, type: 'weapon', tileId: TILE_MAPPING.WEAPON_SHOP }
+                    ]
+                },
+            },
             map_3: { name: '？？？？？', unlocked: false, config: { rocks: [], shops: [] } },
             map_4: { name: '？？？？？', unlocked: false, config: { rocks: [], shops: [] } },
             map_5: { name: '？？？？？', unlocked: false, config: { rocks: [], shops: [] } },
@@ -94,15 +122,19 @@ class GameData {
         for (let y = 0; y < MAP_HEIGHT_IN_TILES; y++) {
             const row = [];
             for (let x = 0; x < MAP_WIDTH_IN_TILES; x++) {
-                const shop = config.shops.find(s => s.x === x && s.y === y);
+                const shop = config.shops && config.shops.find(s => s.x === x && s.y === y);
                 if (shop) {
                     row.push(shop.tileId);
                 } else if (y < 2 || y >= MAP_HEIGHT_IN_TILES - 2 || x < 2 || x >= MAP_WIDTH_IN_TILES - 2) {
                     row.push(TILE_MAPPING.SEA);
                 } else if (y < 5 || y >= MAP_HEIGHT_IN_TILES - 5 || x < 5 || x >= MAP_WIDTH_IN_TILES - 5) {
                     row.push(TILE_MAPPING.LAKE);
-                } else if (config.rocks.some(r => r.x === x && r.y === y)) {
+                } else if (config.forest && config.forest.some(f => f.x === x && f.y === y)) {
+                    row.push(TILE_MAPPING.FOREST);
+                } else if (config.rocks && config.rocks.some(r => r.x === x && r.y === y)) {
                     row.push(TILE_MAPPING.ROCK);
+                } else if (config.chestnuts && config.chestnuts.some(c => c.x === x && c.y === y)) {
+                    row.push(TILE_MAPPING.CHESTNUT);
                 } else {
                     row.push(TILE_MAPPING.GRASS);
                 }
@@ -241,7 +273,7 @@ class Map {
             return false;
         }
         const tileId = this.data[y][x];
-        return tileId !== TILE_MAPPING.ROCK && tileId !== TILE_MAPPING.SEA;
+        return tileId !== TILE_MAPPING.ROCK && tileId !== TILE_MAPPING.SEA && tileId !== TILE_MAPPING.FOREST;
     }
 
     getTile(x, y) {
@@ -446,7 +478,7 @@ class InputHandler {
         this.menu = {
             title: { index: 0, items: [] },
             mapSelect: { index: 0, items: Object.values(this.data.maps) },
-            pause: { index: 0, items: [{name: 'Resume'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Quit to Title'}] },
+            pause: { index: 0, items: [{name: 'Resume'}, {name: 'Select Stage'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Quit to Title'}] },
             shop: { state: 'category', index: 0, currentList: [] },
             equipment: { state: 'equipment', index: 0 }
         };
@@ -553,6 +585,12 @@ class InputHandler {
                 this.ui.hide('pause');
                 this.ui.elements.game.style.filter = 'none';
                 this.game.gameLoop(); // Restart loop
+            } else if (selection === 'Select Stage') {
+                this.game.gameState = 'map_select';
+                this.ui.hide('pause');
+                this.ui.elements.game.style.filter = 'none';
+                this.ui.show('mapSelect');
+                this.ui.drawMapSelect(this.data.maps, this.menu.mapSelect.index);
             } else if (selection === 'Status') {
                 this.game.gameState = 'status_screen';
                 this.ui.hide('pause');
