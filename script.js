@@ -119,6 +119,7 @@ class GameData {
 
 class Player {
     constructor() {
+        this.name = 'Hero';
         this.x = 0;
         this.y = 0;
         this.size = TILE_SIZE;
@@ -207,6 +208,12 @@ class Player {
 
     draw(ctx, image) {
         ctx.drawImage(image, 0, 0, this.size, this.size, this.x * TILE_SIZE, this.y * TILE_SIZE, this.size, this.size);
+
+        // Draw player name
+        ctx.fillStyle = 'white';
+        ctx.font = '10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(this.name, this.x * TILE_SIZE + TILE_SIZE / 2, this.y * TILE_SIZE - 5);
     }
 }
 
@@ -291,6 +298,7 @@ class UIManager {
             mapName: document.getElementById('map-name-display'),
             messageText: document.getElementById('message-text'),
             // Lists
+            titleMenuList: document.getElementById('title-menu-list'),
             mapList: document.getElementById('map-list'),
             pauseMenuList: document.getElementById('pause-menu-list'),
             shopTitle: document.getElementById('shop-menu').querySelector('h3'),
@@ -358,6 +366,7 @@ class UIManager {
     }
 
     _renderList(ulElement, items, selectedIndex, formatter) {
+        if (!ulElement) return;
         ulElement.innerHTML = '';
         items.forEach((item, index) => {
             const li = document.createElement('li');
@@ -365,11 +374,15 @@ class UIManager {
             if (index === selectedIndex) {
                 li.classList.add('selected');
             }
-            if (item.locked) {
+            if (item.locked || item.disabled) {
                 li.classList.add('locked');
             }
             ulElement.appendChild(li);
         });
+    }
+
+    drawTitleMenu(menuItems, selectedIndex) {
+        this._renderList(this.elements.titleMenuList, menuItems, selectedIndex, item => item.name);
     }
 
     drawMapSelect(maps, selectedIndex) {
@@ -431,8 +444,9 @@ class InputHandler {
         this.data = game.data;
         
         this.menu = {
+            title: { index: 0, items: [] },
             mapSelect: { index: 0, items: Object.values(this.data.maps) },
-            pause: { index: 0, items: [{name: 'Resume'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Quit to Title'}] },
+            pause: { index: 0, items: [{name: 'Resume'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Quit to Title'}] },
             shop: { state: 'category', index: 0, currentList: [] },
             equipment: { state: 'equipment', index: 0 }
         };
@@ -463,11 +477,18 @@ class InputHandler {
     }
 
     handleTitleInput(e) {
+        this._navigateMenu(e, this.menu.title, this.menu.title.items);
+        this.ui.drawTitleMenu(this.menu.title.items, this.menu.title.index);
+
         if (e.key === 'Enter') {
-            this.game.gameState = 'map_select';
-            this.ui.hide('title');
-            this.ui.show('mapSelect');
-            this.ui.drawMapSelect(this.data.maps, this.menu.mapSelect.index);
+            const selection = this.menu.title.items[this.menu.title.index];
+            if (selection.disabled) return;
+
+            if (selection.name === 'New Game') {
+                this.game.newGame();
+            } else if (selection.name === 'Continue') {
+                this.game.loadGame();
+            }
         }
     }
 
@@ -477,7 +498,7 @@ class InputHandler {
             const selectedMap = this.menu.mapSelect.items[this.menu.mapSelect.index];
             if (selectedMap.unlocked) {
                 const mapKey = Object.keys(this.data.maps)[this.menu.mapSelect.index];
-                this.game.startGame(mapKey);
+                this.game.enterMap(mapKey);
             }
         }
         this.ui.drawMapSelect(this.data.maps, this.menu.mapSelect.index);
@@ -490,6 +511,11 @@ class InputHandler {
             this.ui.show('pause');
             this.ui.drawPauseMenu(this.menu.pause.items, this.menu.pause.index);
             this.ui.elements.game.style.filter = 'blur(3px)';
+            return;
+        }
+        if (e.code === 'Space') {
+            e.preventDefault();
+            this.game.showChatPrompt();
             return;
         }
         if (e.key === 'Enter') {
@@ -506,15 +532,10 @@ class InputHandler {
             return;
         }
 
-        let moved = false;
-        if (e.key === 'ArrowUp') moved = this.player.move(0, -1, this.game.map);
-        else if (e.key === 'ArrowDown') moved = this.player.move(0, 1, this.game.map);
-        else if (e.key === 'ArrowLeft') moved = this.player.move(-1, 0, this.game.map);
-        else if (e.key === 'ArrowRight') moved = this.player.move(1, 0, this.game.map);
-        
-        if (moved) {
-            this.game.redraw();
-        }
+        if (e.key === 'ArrowUp') this.player.move(0, -1, this.game.map);
+        else if (e.key === 'ArrowDown') this.player.move(0, 1, this.game.map);
+        else if (e.key === 'ArrowLeft') this.player.move(-1, 0, this.game.map);
+        else if (e.key === 'ArrowRight') this.player.move(1, 0, this.game.map);
     }
 
     handlePausedInput(e) {
@@ -523,6 +544,7 @@ class InputHandler {
             this.game.gameState = 'playing';
             this.ui.hide('pause');
             this.ui.elements.game.style.filter = 'none';
+            this.game.gameLoop(); // Restart loop
         }
         if (e.key === 'Enter') {
             const selection = this.menu.pause.items[this.menu.pause.index].name;
@@ -530,6 +552,7 @@ class InputHandler {
                 this.game.gameState = 'playing';
                 this.ui.hide('pause');
                 this.ui.elements.game.style.filter = 'none';
+                this.game.gameLoop(); // Restart loop
             } else if (selection === 'Status') {
                 this.game.gameState = 'status_screen';
                 this.ui.hide('pause');
@@ -542,12 +565,15 @@ class InputHandler {
                 this.ui.hide('pause');
                 this.ui.show('equipment');
                 this.ui.drawEquipmentScreen(this.player, this.menu.equipment);
+            } else if (selection === 'Save') {
+                this.game.saveGame();
             } else if (selection === 'Quit to Title') {
                 this.game.gameState = 'title';
                 this.ui.hideAllScreens();
                 this.ui.show('title');
                 this.ui.elements.game.style.filter = 'none';
                 document.body.style.backgroundColor = '#000';
+                this.game.initTitleScreen();
             }
         }
         this.ui.drawPauseMenu(this.menu.pause.items, this.menu.pause.index);
@@ -617,6 +643,7 @@ class InputHandler {
             if (menu.state === 'category') {
                 this.game.gameState = 'playing';
                 this.ui.hide('shop');
+                this.game.gameLoop(); // Restart loop
                 return; // Exit to prevent redraw
             } else {
                 menu.state = 'category';
@@ -628,6 +655,7 @@ class InputHandler {
                 if (menu.state === 'category') {
                     this.game.gameState = 'playing';
                     this.ui.hide('shop');
+                    this.game.gameLoop(); // Restart loop
                     return; // Exit
                 } else {
                     menu.state = 'category';
@@ -689,13 +717,20 @@ class Game {
         this.gameState = 'title';
         this.mapImage = new Image();
         this.playerImage = new Image();
+        this.currentMapKey = 'starting_plains';
+        this.saveDataExists = false;
+
+        this.chatMessage = null;
+        this.chatMessageExpiry = 0;
         
+        this.gameLoop = this.gameLoop.bind(this);
         this.init();
     }
 
     init() {
         this.ui.hideAllScreens();
         this.ui.show('title');
+        this.initTitleScreen();
         
         let imagesLoaded = 0;
         const totalImages = 2;
@@ -711,23 +746,191 @@ class Game {
         this.playerImage.onload = onImageLoad;
     }
 
-    startGame(mapKey) {
+    initTitleScreen() {
+        this.checkForSaveData();
+        const menuItems = [
+            { name: 'New Game' },
+            { name: 'Continue', disabled: !this.saveDataExists }
+        ];
+        this.inputHandler.menu.title.items = menuItems;
+        // Select "Continue" by default if it exists
+        this.inputHandler.menu.title.index = this.saveDataExists ? 1 : 0;
+        this.ui.drawTitleMenu(menuItems, this.inputHandler.menu.title.index);
+    }
+
+    checkForSaveData() {
+        this.saveDataExists = localStorage.getItem('rpgSaveData') !== null;
+    }
+
+    newGame() {
+        this.player = new Player();
+        this.inputHandler.player = this.player;
+
+        const playerName = prompt("Enter your character's name:", "Hero");
+        if (playerName) {
+            this.player.name = playerName.trim();
+        }
+
+        this.gameState = 'map_select';
+        this.ui.hide('title');
+        this.ui.show('mapSelect');
+        this.ui.drawMapSelect(this.data.maps, this.inputHandler.menu.mapSelect.index);
+    }
+
+    enterMap(mapKey, startPosition = null) {
+        this.currentMapKey = mapKey;
         this.map.load(this.data.maps[mapKey]);
-        this.player.x = Math.floor(this.map.MAP_WIDTH_IN_TILES / 2);
-        this.player.y = Math.floor(this.map.MAP_HEIGHT_IN_TILES / 2);
+        
+        if (startPosition) {
+            this.player.x = startPosition.x;
+            this.player.y = startPosition.y;
+        } else {
+            this.player.x = Math.floor(this.map.MAP_WIDTH_IN_TILES / 2);
+            this.player.y = Math.floor(this.map.MAP_HEIGHT_IN_TILES / 2);
+        }
+
         this.gameState = 'playing';
         this.ui.hideAllScreens();
         this.ui.show('game');
         document.body.style.backgroundColor = '#333';
         this.ui.updatePlayerStats(this.player);
         this.ui.updateMapName(this.map.name);
-        this.redraw();
+        
+        this.gameLoop(); // Start the game loop
     }
 
-    redraw() {
+    saveGame() {
+        try {
+            const saveData = {
+                player: {
+                    name: this.player.name,
+                    x: this.player.x,
+                    y: this.player.y,
+                    level: this.player.level,
+                    money: this.player.money,
+                    maxHealth: this.player.maxHealth,
+                    currentHealth: this.player.currentHealth,
+                    attack: this.player.attack,
+                    defense: this.player.defense,
+                    speed: this.player.speed,
+                    magic: this.player.magic,
+                    inventory: this.player.inventory,
+                    equipment: this.player.equipment,
+                },
+                currentMapKey: this.currentMapKey
+            };
+            localStorage.setItem('rpgSaveData', JSON.stringify(saveData));
+            this.ui.showMessage('Game Saved!');
+        } catch (error) {
+            console.error("Failed to save game:", error);
+            this.ui.showMessage('Error: Could not save game.');
+        }
+    }
+
+    loadGame() {
+        const savedString = localStorage.getItem('rpgSaveData');
+        if (!savedString) {
+            this.ui.showMessage("No save data found.");
+            return;
+        }
+        try {
+            const savedData = JSON.parse(savedString);
+            
+            const p = savedData.player;
+            this.player.name = p.name || 'Hero';
+            this.player.x = p.x;
+            this.player.y = p.y;
+            this.player.level = p.level;
+            this.player.money = p.money;
+            this.player.maxHealth = p.maxHealth;
+            this.player.currentHealth = p.currentHealth;
+            this.player.attack = p.attack;
+            this.player.defense = p.defense;
+            this.player.speed = p.speed;
+            this.player.magic = p.magic;
+            this.player.inventory = p.inventory;
+            this.player.equipment = p.equipment;
+
+            this.enterMap(savedData.currentMapKey, { x: p.x, y: p.y });
+
+        } catch (error) {
+            console.error("Failed to load game:", error);
+            this.ui.showMessage('Error: Save data is corrupted.');
+            localStorage.removeItem('rpgSaveData');
+            this.initTitleScreen();
+        }
+    }
+
+    showChatPrompt() {
+        const message = prompt("Enter message:");
+        if (message) {
+            this.chatMessage = message;
+            this.chatMessageExpiry = Date.now() + 10000;
+        }
+    }
+
+    drawChatBubble() {
+        const FONT_SIZE = 10;
+        const PADDING = 8;
+        const BUBBLE_Y_OFFSET = 20;
+        const BUBBLE_ARROW_HEIGHT = 5;
+
+        this.ctx.font = `${FONT_SIZE}px monospace`;
+        const textWidth = this.ctx.measureText(this.chatMessage).width;
+        
+        const bubbleWidth = textWidth + PADDING * 2;
+        const bubbleHeight = FONT_SIZE + PADDING * 2;
+        const bubbleX = this.player.x * TILE_SIZE + TILE_SIZE / 2 - bubbleWidth / 2;
+        const bubbleY = this.player.y * TILE_SIZE - BUBBLE_Y_OFFSET - bubbleHeight;
+
+        // Draw rounded rectangle (the "cloud")
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        this.ctx.strokeStyle = 'black';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        const radius = 10;
+        this.ctx.moveTo(bubbleX + radius, bubbleY);
+        this.ctx.lineTo(bubbleX + bubbleWidth - radius, bubbleY);
+        this.ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY, bubbleX + bubbleWidth, bubbleY + radius);
+        this.ctx.lineTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight - radius);
+        this.ctx.quadraticCurveTo(bubbleX + bubbleWidth, bubbleY + bubbleHeight, bubbleX + bubbleWidth - radius, bubbleY + bubbleHeight);
+        
+        // Arrow pointing down
+        this.ctx.lineTo(bubbleX + bubbleWidth / 2 + 5, bubbleY + bubbleHeight);
+        this.ctx.lineTo(bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight + BUBBLE_ARROW_HEIGHT);
+        this.ctx.lineTo(bubbleX + bubbleWidth / 2 - 5, bubbleY + bubbleHeight);
+
+        this.ctx.lineTo(bubbleX + radius, bubbleY + bubbleHeight);
+        this.ctx.quadraticCurveTo(bubbleX, bubbleY + bubbleHeight, bubbleX, bubbleY + bubbleHeight - radius);
+        this.ctx.lineTo(bubbleX, bubbleY + radius);
+        this.ctx.quadraticCurveTo(bubbleX, bubbleY, bubbleX + radius, bubbleY);
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.stroke();
+
+        // Draw text inside the bubble
+        this.ctx.fillStyle = 'black';
+        this.ctx.textAlign = 'center';
+        this.ctx.textBaseline = 'middle';
+        this.ctx.fillText(this.chatMessage, bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2);
+    }
+
+    gameLoop() {
+        if (this.gameState !== 'playing') {
+            return; // Stop the loop if not in playing state
+        }
+
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.map.draw(this.ctx, this.mapImage);
         this.player.draw(this.ctx, this.playerImage);
+
+        if (this.chatMessage && Date.now() < this.chatMessageExpiry) {
+            this.drawChatBubble();
+        } else {
+            this.chatMessage = null;
+        }
+
+        requestAnimationFrame(this.gameLoop);
     }
 }
 
