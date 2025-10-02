@@ -49,6 +49,9 @@ class GameData {
         this.accessories = [
             { name: 'Ring of Power', price: 1200, magic: 5, type: 'accessory' }
         ];
+        this.monsters = {
+            slime: { name: 'Slime', health: 20, attack: 5, defense: 2, speed: 3, exp: 5, gold: 10, imageSrc: 'img/monster.png' },
+        };
         this.shopCategories = [
             { name: 'Buy Weapons' },
             { name: 'Buy Armor' },
@@ -156,6 +159,8 @@ class Player {
         this.y = 0;
         this.size = TILE_SIZE;
         this.level = 1;
+        this.xp = 0;
+        this.xpToNextLevel = 10;
         this.money = 10000;
         this.maxHealth = 100;
         this.currentHealth = 100;
@@ -200,12 +205,17 @@ class Player {
         return stats;
     }
 
-    move(dx, dy, map) {
+    move(dx, dy, map, game) {
         const newX = this.x + dx;
         const newY = this.y + dy;
         if (map.isWalkable(newX, newY)) {
             this.x = newX;
             this.y = newY;
+
+            if (game.currentMapKey === 'map_2' && Math.random() < 0.1) { // 10% chance of encounter in the forest
+                game.startCombat();
+            }
+
             return true;
         }
         return false;
@@ -238,6 +248,25 @@ class Player {
         }
     }
 
+    gainXP(amount) {
+        this.xp += amount;
+        if (this.xp >= this.xpToNextLevel) {
+            this.levelUp();
+        }
+    }
+
+    levelUp() {
+        while (this.xp >= this.xpToNextLevel) {
+            this.level++;
+            this.xp -= this.xpToNextLevel;
+            this.xpToNextLevel = Math.floor(this.xpToNextLevel * 1.5);
+            this.maxHealth += 10;
+            this.currentHealth = this.maxHealth;
+            this.attack += 2;
+            this.defense += 1;
+        }
+    }
+
     draw(ctx, image) {
         ctx.drawImage(image, 0, 0, this.size, this.size, this.x * TILE_SIZE, this.y * TILE_SIZE, this.size, this.size);
 
@@ -248,6 +277,30 @@ class Player {
         ctx.fillText(this.name, this.x * TILE_SIZE + TILE_SIZE / 2, this.y * TILE_SIZE - 5);
     }
 }
+
+// =================================================================================
+// M O N S T E R
+// =================================================================================
+
+class Monster {
+    constructor(monsterData) {
+        this.name = monsterData.name;
+        this.maxHealth = monsterData.health;
+        this.currentHealth = monsterData.health;
+        this.attack = monsterData.attack;
+        this.defense = monsterData.defense;
+        this.speed = monsterData.speed;
+        this.exp = monsterData.exp;
+        this.gold = monsterData.gold;
+        this.imageSrc = monsterData.imageSrc;
+    }
+
+    draw(ctx, image) {
+        // Simple draw logic for now
+        ctx.drawImage(image, 100, 50, 100, 100); 
+    }
+}
+
 
 // =================================================================================
 // M A P
@@ -323,8 +376,11 @@ class UIManager {
             equipment: document.getElementById('equipment-screen'),
             shop: document.getElementById('shop-menu'),
             messageBox: document.getElementById('message-box'),
+            combat: document.getElementById('combat-screen'),
             // Game UI
             level: document.getElementById('level'),
+            xp: document.getElementById('xp'),
+            xpToNextLevel: document.getElementById('xp-to-next-level'),
             money: document.getElementById('money'),
             healthBar: document.getElementById('health-bar'),
             mapName: document.getElementById('map-name-display'),
@@ -337,6 +393,14 @@ class UIManager {
             shopItemList: document.getElementById('weapon-list'),
             equippedItemsList: document.getElementById('equipped-items-list'),
             inventoryItemsList: document.getElementById('inventory-items-list'),
+            combatMenuList: document.getElementById('combat-menu-list'),
+            combatMonsterName: document.getElementById('combat-monster-name'),
+            combatMonsterImage: document.getElementById('combat-monster-image'),
+            combatMonsterHp: document.getElementById('combat-monster-hp'),
+            combatPlayerLevel: document.getElementById('combat-player-level'),
+            combatPlayerHp: document.getElementById('combat-player-hp'),
+            combatLogContainer: document.getElementById('combat-log-container'),
+            combatLog: document.getElementById('combat-log'),
             // Status
             statusHealth: document.getElementById('status-health'),
             statusAttack: document.getElementById('status-attack'),
@@ -375,7 +439,8 @@ class UIManager {
         return new Promise(resolve => {
             const listener = (e) => {
                 if (e.key === 'Enter') {
-                    e.stopPropagation();
+                    e.preventDefault(); // Prevent any default browser action
+                    e.stopPropagation(); // Stop the event from bubbling up
                     this.hide('messageBox');
                     window.removeEventListener('keydown', listener, true);
                     if (callback) callback();
@@ -388,6 +453,8 @@ class UIManager {
 
     updatePlayerStats(player) {
         this.elements.level.textContent = player.level;
+        this.elements.xp.textContent = player.xp;
+        this.elements.xpToNextLevel.textContent = player.xpToNextLevel;
         this.elements.money.textContent = player.money;
         const healthPercentage = (player.currentHealth / player.maxHealth) * 100;
         this.elements.healthBar.style.width = `${healthPercentage}%`;
@@ -424,6 +491,22 @@ class UIManager {
 
     drawPauseMenu(menuItems, selectedIndex) {
         this._renderList(this.elements.pauseMenuList, menuItems, selectedIndex, item => item.name);
+    }
+
+    drawCombatMenu(menuItems, selectedIndex) {
+        this._renderList(this.elements.combatMenuList, menuItems, selectedIndex, item => item.name);
+    }
+
+    addCombatLogMessage(message) {
+        const p = document.createElement('p');
+        p.textContent = message;
+        this.elements.combatLog.appendChild(p);
+        // Auto-scroll to the bottom
+        this.elements.combatLogContainer.scrollTop = this.elements.combatLogContainer.scrollHeight;
+    }
+
+    clearCombatLog() {
+        this.elements.combatLog.innerHTML = '';
     }
     
     drawShop(title, items, selectedIndex) {
@@ -480,15 +563,14 @@ class InputHandler {
             mapSelect: { index: 0, items: Object.values(this.data.maps) },
             pause: { index: 0, items: [{name: 'Resume'}, {name: 'Select Stage'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Quit to Title'}] },
             shop: { state: 'category', index: 0, currentList: [] },
-            equipment: { state: 'equipment', index: 0 }
+            equipment: { state: 'equipment', index: 0 },
+            combat: { index: 0, items: [{name: 'たたかう'}, {name: 'にげる'}] }
         };
 
         window.addEventListener('keydown', (e) => this.handleKeydown(e));
     }
 
     handleKeydown(e) {
-        if (this.ui.activeScreens.has('messageBox')) return;
-
         const state = this.game.gameState;
 
         if (state === 'title') this.handleTitleInput(e);
@@ -498,6 +580,7 @@ class InputHandler {
         else if (state === 'status_screen') this.handleStatusScreenInput(e);
         else if (state === 'equipment_screen') this.handleEquipmentScreenInput(e);
         else if (state === 'shop') this.handleShopInput(e);
+        else if (state === 'combat') this.handleCombatInput(e);
     }
 
     _navigateMenu(e, menuState, list) {
@@ -505,6 +588,18 @@ class InputHandler {
             menuState.index = (menuState.index - 1 + list.length) % list.length;
         } else if (e.key === 'ArrowDown') {
             menuState.index = (menuState.index + 1) % list.length;
+        }
+    }
+
+    handleCombatInput(e) {
+        if (this.game.combatState !== 'player_turn') return;
+
+        this._navigateMenu(e, this.menu.combat, this.menu.combat.items);
+        this.ui.drawCombatMenu(this.menu.combat.items, this.menu.combat.index);
+
+        if (e.key === 'Enter') {
+            const selection = this.menu.combat.items[this.menu.combat.index].name;
+            this.game.handleCombatAction(selection);
         }
     }
 
@@ -564,10 +659,10 @@ class InputHandler {
             return;
         }
 
-        if (e.key === 'ArrowUp') this.player.move(0, -1, this.game.map);
-        else if (e.key === 'ArrowDown') this.player.move(0, 1, this.game.map);
-        else if (e.key === 'ArrowLeft') this.player.move(-1, 0, this.game.map);
-        else if (e.key === 'ArrowRight') this.player.move(1, 0, this.game.map);
+        if (e.key === 'ArrowUp') this.player.move(0, -1, this.game.map, this.game);
+        else if (e.key === 'ArrowDown') this.player.move(0, 1, this.game.map, this.game);
+        else if (e.key === 'ArrowLeft') this.player.move(-1, 0, this.game.map, this.game);
+        else if (e.key === 'ArrowRight') this.player.move(1, 0, this.game.map, this.game);
     }
 
     handlePausedInput(e) {
@@ -755,7 +850,10 @@ class Game {
         this.gameState = 'title';
         this.mapImage = new Image();
         this.playerImage = new Image();
+        this.monsterImage = new Image();
         this.currentMapKey = 'starting_plains';
+        this.currentMonster = null;
+        this.combatState = null; // Can be 'player_turn', 'action_in_progress'
         this.saveDataExists = false;
 
         this.chatMessage = null;
@@ -771,7 +869,7 @@ class Game {
         this.initTitleScreen();
         
         let imagesLoaded = 0;
-        const totalImages = 2;
+        const totalImages = 3; // Increased to 3
         const onImageLoad = () => {
             imagesLoaded++;
             if (imagesLoaded === totalImages) {
@@ -780,8 +878,10 @@ class Game {
         };
         this.mapImage.src = 'img/map.png';
         this.playerImage.src = 'img/player.png';
+        this.monsterImage.src = 'img/monster.png'; // Preload monster image
         this.mapImage.onload = onImageLoad;
         this.playerImage.onload = onImageLoad;
+        this.monsterImage.onload = onImageLoad;
     }
 
     initTitleScreen() {
@@ -835,6 +935,105 @@ class Game {
         this.ui.updateMapName(this.map.name);
         
         this.gameLoop(); // Start the game loop
+    }
+
+    startCombat() {
+        this.gameState = 'combat';
+        this.combatState = 'player_turn';
+
+        // For now, we always fight a slime
+        this.currentMonster = new Monster(this.data.monsters.slime);
+        this.monsterImage.src = this.currentMonster.imageSrc;
+        this.ui.hide('game');
+        this.ui.show('combat');
+        
+        this.ui.elements.combatMonsterName.textContent = this.currentMonster.name;
+        this.ui.elements.combatMonsterImage.src = this.monsterImage.src;
+        this.ui.clearCombatLog();
+        this.ui.addCombatLogMessage(`A wild ${this.currentMonster.name} appeared!`);
+
+        this.updateCombatUI();
+
+        this.inputHandler.menu.combat.index = 0;
+        this.ui.drawCombatMenu(this.inputHandler.menu.combat.items, 0);
+    }
+
+    updateCombatUI() {
+        this.ui.elements.combatMonsterHp.textContent = `${this.currentMonster.currentHealth} / ${this.currentMonster.maxHealth}`;
+        this.ui.elements.combatPlayerLevel.textContent = this.player.level;
+        this.ui.elements.combatPlayerHp.textContent = `${this.player.currentHealth} / ${this.player.maxHealth}`;
+    }
+
+    endCombat(victory) {
+        if (victory) {
+            this.player.gainXP(this.currentMonster.exp);
+            this.player.money += this.currentMonster.gold;
+            this.ui.updatePlayerStats(this.player);
+        }
+        this.gameState = 'playing';
+        this.combatState = null;
+        this.currentMonster = null;
+        this.ui.hide('combat');
+        this.ui.show('game');
+        this.gameLoop();
+    }
+
+    handleCombatAction(action) {
+        if (this.gameState !== 'combat' || this.combatState !== 'player_turn') return;
+
+        this.combatState = 'action_in_progress'; // Prevent player input during the sequence
+
+        if (action === 'たたかう') {
+            // Player's turn
+            const playerStats = this.player.getTotalStats();
+            const damage = Math.max(1, playerStats.attack - this.currentMonster.defense);
+            this.currentMonster.currentHealth -= damage;
+            this.updateCombatUI();
+            this.ui.addCombatLogMessage(`プレイヤーの攻撃！ ${damage} のダメージを与えた。`);
+
+            // Check for monster defeat
+            if (this.currentMonster.currentHealth <= 0) {
+                this.currentMonster.currentHealth = 0;
+                this.updateCombatUI();
+                setTimeout(() => {
+                    this.ui.addCombatLogMessage(`${this.currentMonster.name} をやっつけた！`);
+                    setTimeout(() => {
+                        this.ui.addCombatLogMessage(`経験値 ${this.currentMonster.exp} と ${this.currentMonster.gold} ゴールドを手に入れた。`);
+                        setTimeout(() => this.endCombat(true), 1000); // End combat after a delay
+                    }, 1000);
+                }, 1000);
+                return; // Stop further actions
+            }
+
+            // Monster's turn (after a delay)
+            setTimeout(() => {
+                const monsterDamage = Math.max(1, this.currentMonster.attack - playerStats.defense);
+                this.player.currentHealth -= monsterDamage;
+                this.ui.updatePlayerStats(this.player);
+                this.updateCombatUI();
+                this.ui.addCombatLogMessage(`${this.currentMonster.name} の攻撃！ ${monsterDamage} のダメージを受けた。`);
+
+                // Check for player defeat
+                if (this.player.currentHealth <= 0) {
+                    this.player.currentHealth = 0;
+                    this.updateCombatUI();
+                    setTimeout(() => {
+                        this.ui.addCombatLogMessage('あなたは倒れてしまった...');
+                        setTimeout(() => this.endCombat(false), 1000); // End combat after a delay
+                    }, 1000);
+                    return; // Stop further actions
+                }
+
+                // Return to player's turn
+                this.combatState = 'player_turn';
+                this.ui.drawCombatMenu(this.inputHandler.menu.combat.items, this.inputHandler.menu.combat.index);
+
+            }, 1000); // 1-second delay before monster attacks
+
+        } else if (action === 'にげる') {
+            this.ui.addCombatLogMessage('戦闘から逃げ出した。');
+            setTimeout(() => this.endCombat(false), 1000);
+        }
     }
 
     saveGame() {
