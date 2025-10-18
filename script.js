@@ -10,6 +10,7 @@ const TILE_MAPPING = {
     ROCK: 2,
     GRASS: 3,
     WEAPON_SHOP: 4,
+    STOCK_SHOP: 5,
     FOREST: 6, // Corrected to 6
     CHESTNUT: 7  // Swapped from 6
 };
@@ -49,8 +50,9 @@ class GameData {
         this.accessories = [
             { name: 'Ring of Power', price: 1200, magic: 5, type: 'accessory' }
         ];
+        this.stocks = ['NVDA', 'MSFT', 'AAPL', 'AMZN', 'AVGO', 'GOOGL', 'MCD', 'YUM'];
         this.monsters = {
-            slime: { name: 'Slime', health: 20, attack: 5, defense: 2, speed: 3, exp: 5, gold: 10, imageSrc: 'img/monster.png' },
+            slime: { name: 'Slime', health: 20, attack: 5, defense: 2, speed: 3, exp: 5, gold: 10, imageSrc: 'img/monster.png', spriteIndex: 0 },
         };
         this.shopCategories = [
             { name: 'Buy Weapons' },
@@ -71,7 +73,8 @@ class GameData {
                         {x: 52, y: 35}, {x: 28, y: 18}, {x: 42, y: 8},  {x: 12, y: 36}
                     ],
                     shops: [
-                        { x: 20, y: 20, type: 'weapon', tileId: TILE_MAPPING.WEAPON_SHOP }
+                        { x: 20, y: 20, type: 'weapon', tileId: TILE_MAPPING.WEAPON_SHOP },
+                        { x: 40, y: 20, type: 'stock', tileId: TILE_MAPPING.STOCK_SHOP }
                     ]
                 },
             },
@@ -169,6 +172,7 @@ class Player {
         this.speed = 1;
         this.magic = 1;
         this.inventory = [];
+        this.stocks = {}; // e.g., { 'NVDA': 10, 'AAPL': 5 }
         this.equipment = {
             weapon: null,
             armor: null,
@@ -293,6 +297,7 @@ class Monster {
         this.exp = monsterData.exp;
         this.gold = monsterData.gold;
         this.imageSrc = monsterData.imageSrc;
+        this.spriteIndex = monsterData.spriteIndex;
     }
 
     draw(ctx, image) {
@@ -354,6 +359,8 @@ class Map {
             for (let x = 0; x < this.MAP_WIDTH_IN_TILES; x++) {
                 if (this.data[y][x] === TILE_MAPPING.WEAPON_SHOP) {
                     ctx.fillText('装備屋さん', x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE - 5);
+                } else if (this.data[y][x] === TILE_MAPPING.STOCK_SHOP) {
+                    ctx.fillText('株屋さん', x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE - 5);
                 }
             }
         }
@@ -374,6 +381,7 @@ class UIManager {
             pause: document.getElementById('pause-screen'),
             status: document.getElementById('status-screen'),
             equipment: document.getElementById('equipment-screen'),
+            stock: document.getElementById('stock-screen'),
             shop: document.getElementById('shop-menu'),
             messageBox: document.getElementById('message-box'),
             combat: document.getElementById('combat-screen'),
@@ -393,9 +401,10 @@ class UIManager {
             shopItemList: document.getElementById('weapon-list'),
             equippedItemsList: document.getElementById('equipped-items-list'),
             inventoryItemsList: document.getElementById('inventory-items-list'),
+            equipmentStatusDisplay: document.getElementById('equipment-status-display'), // New
+            stockList: document.getElementById('stock-list'),
             combatMenuList: document.getElementById('combat-menu-list'),
             combatMonsterName: document.getElementById('combat-monster-name'),
-            combatMonsterImage: document.getElementById('combat-monster-image'),
             combatMonsterHp: document.getElementById('combat-monster-hp'),
             combatPlayerLevel: document.getElementById('combat-player-level'),
             combatPlayerHp: document.getElementById('combat-player-hp'),
@@ -407,6 +416,7 @@ class UIManager {
             statusDefense: document.getElementById('status-defense'),
             statusSpeed: document.getElementById('status-speed'),
             statusMagic: document.getElementById('status-magic'),
+            statusStocks: document.getElementById('status-stocks'),
         };
         this.activeScreens = new Set();
     }
@@ -523,6 +533,18 @@ class UIManager {
         this.elements.statusDefense.textContent = `${stats.defense} (${player.defense} + ${stats.bonuses.defense})`;
         this.elements.statusSpeed.textContent = `${stats.speed} (${player.speed} + ${stats.bonuses.speed})`;
         this.elements.statusMagic.textContent = `${stats.magic} (${player.magic} + ${stats.bonuses.magic})`;
+
+        let stocksHtml = '<h3>Stocks</h3>';
+        if (Object.keys(player.stocks).length === 0) {
+            stocksHtml += '<p>None</p>';
+        } else {
+            stocksHtml += '<ul>';
+            for (const symbol in player.stocks) {
+                stocksHtml += `<li>${symbol}: ${player.stocks[symbol]} shares</li>`;
+            }
+            stocksHtml += '</ul>';
+        }
+        this.elements.statusStocks.innerHTML = stocksHtml;
     }
 
     drawEquipmentScreen(player, menuState) {
@@ -533,17 +555,105 @@ class UIManager {
             { name: 'Shoes', item: player.equipment.shoes, slot: 'shoes' },
             { name: 'Accessory', item: player.equipment.accessory, slot: 'accessory' },
         ];
-        
-        const equippedFormatter = item => `${item.name}: ${item.item ? item.item.name : 'None'}`;
-        const inventoryFormatter = item => item.name;
 
-        if (menuState.state === 'equipment') {
-            this._renderList(this.elements.equippedItemsList, equippedSlots, menuState.index, equippedFormatter);
-            this._renderList(this.elements.inventoryItemsList, player.inventory, -1, inventoryFormatter);
-        } else {
-            this._renderList(this.elements.equippedItemsList, equippedSlots, -1, equippedFormatter);
-            this._renderList(this.elements.inventoryItemsList, player.inventory, menuState.index, inventoryFormatter);
+        // 1. Render Equipped Items
+        const equippedFormatter = item => {
+            const itemName = item.item ? item.item.name : 'None';
+            return `<div>${item.name}</div><div>${itemName}</div>`;
+        };
+        this._renderList(this.elements.equippedItemsList, equippedSlots, menuState.state === 'equipment' ? menuState.index : -1, equippedFormatter);
+
+        // 2. Render Inventory Items
+        const inventoryFormatter = item => {
+            let stats = [];
+            if (item.attack) stats.push(`ATK+${item.attack}`);
+            if (item.defense) stats.push(`DEF+${item.defense}`);
+            if (item.speed) stats.push(`SPD+${item.speed}`);
+            if (item.magic) stats.push(`MAG+${item.magic}`);
+            return `<div>${item.name}</div><div class="item-stats">${stats.join(' ')}</div>`;
+        };
+        this._renderList(this.elements.inventoryItemsList, player.inventory, menuState.state === 'inventory' ? menuState.index : -1, inventoryFormatter);
+
+        // 3. Render Status Display (with Preview)
+        this.drawEquipmentStatus(player, menuState);
+    }
+
+    drawEquipmentStatus(player, menuState) {
+        const currentStats = player.getTotalStats();
+        let previewItem = null;
+        if (menuState.state === 'inventory' && player.inventory.length > 0) {
+            previewItem = player.inventory[menuState.index];
         }
+
+        const getPreviewStats = () => {
+            if (!previewItem) return null;
+
+            const tempPlayer = new Player(); // Use a temporary player for calculation
+            Object.assign(tempPlayer, JSON.parse(JSON.stringify(player))); // Deep copy
+            
+            // Temporarily equip the item to calculate new stats
+            let slotToEquip = null;
+            if (previewItem.type === 'weapon') slotToEquip = 'weapon';
+            else if (previewItem.type === 'armor') slotToEquip = 'armor';
+            else if (previewItem.type === 'shield') slotToEquip = 'shield';
+            else if (previewItem.type === 'shoes') slotToEquip = 'shoes';
+            else if (previewItem.type === 'accessory') slotToEquip = 'accessory';
+
+            if (slotToEquip) {
+                if(tempPlayer.equipment[slotToEquip]) {
+                    tempPlayer.inventory.push(tempPlayer.equipment[slotToEquip]);
+                }
+                tempPlayer.equipment[slotToEquip] = previewItem;
+            }
+
+            return tempPlayer.getTotalStats();
+        };
+
+        const previewStats = getPreviewStats();
+
+        const statMapping = [
+            { label: 'Health', value: `${player.currentHealth} / ${player.maxHealth}` },
+            { label: 'Attack', key: 'attack' },
+            { label: 'Defense', key: 'defense' },
+            { label: 'Speed', key: 'speed' },
+            { label: 'Magic', key: 'magic' },
+        ];
+
+        let html = '';
+        statMapping.forEach(stat => {
+            html += `<div class="label">${stat.label}</div>`;
+            if (stat.key) {
+                const baseValue = currentStats[stat.key];
+                let previewHtml = '';
+                if (previewStats) {
+                    const previewValue = previewStats[stat.key];
+                    if (previewValue !== baseValue) {
+                        previewHtml = ` <span class="arrow">→</span> <span class="preview">${previewValue}</span>`;
+                    }
+                }
+                html += `<div class="value">${baseValue}${previewHtml}</div>`;
+            } else {
+                html += `<div class="value">${stat.value}</div>`;
+            }
+        });
+
+        this.elements.equipmentStatusDisplay.innerHTML = html;
+    }
+
+    drawStockScreen(stocks, selectedIndex) {
+        const formatter = stock => {
+            if (stock.loading) {
+                return `<div>${stock.symbol}</div><div>Loading...</div>`;
+            }
+            if (stock.error) {
+                return `<div>${stock.symbol}</div><div class="item-stats">Error</div>`;
+            }
+            const price = parseFloat(stock.price).toFixed(2);
+            const change = parseFloat(stock.change).toFixed(2);
+            const changeClass = change >= 0 ? 'preview' : 'locked'; // Use existing classes for color
+            return `<div>${stock.symbol}</div><div>$${price} <span class="${changeClass}">(${change})</span></div>`;
+        };
+        this._renderList(this.elements.stockList, stocks, selectedIndex, formatter);
     }
 }
 
@@ -564,13 +674,14 @@ class InputHandler {
             pause: { index: 0, items: [{name: 'Resume'}, {name: 'Select Stage'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Quit to Title'}] },
             shop: { state: 'category', index: 0, currentList: [] },
             equipment: { state: 'equipment', index: 0 },
-            combat: { index: 0, items: [{name: 'たたかう'}, {name: 'にげる'}] }
+            combat: { index: 0, items: [{name: 'たたかう'}, {name: 'にげる'}] },
+            stock_shop: { index: 0 }
         };
 
         window.addEventListener('keydown', (e) => this.handleKeydown(e));
     }
 
-    handleKeydown(e) {
+    async handleKeydown(e) {
         const state = this.game.gameState;
 
         if (state === 'title') this.handleTitleInput(e);
@@ -580,6 +691,7 @@ class InputHandler {
         else if (state === 'status_screen') this.handleStatusScreenInput(e);
         else if (state === 'equipment_screen') this.handleEquipmentScreenInput(e);
         else if (state === 'shop') this.handleShopInput(e);
+        else if (state === 'stock_shop') this.handleStockShopInput(e);
         else if (state === 'combat') this.handleCombatInput(e);
     }
 
@@ -655,6 +767,8 @@ class InputHandler {
                     this.ui.show('shop');
                     this.ui.drawShop('Weapon Shop', this.data.shopCategories, 0);
                 });
+            } else if (tile === TILE_MAPPING.STOCK_SHOP) {
+                this.game.enterStockShop();
             }
             return;
         }
@@ -728,29 +842,45 @@ class InputHandler {
             this.ui.show('pause');
             return;
         }
+
+        let needsRedraw = false;
+
         if (e.key === 'ArrowLeft' && menu.state === 'inventory') {
             menu.state = 'equipment';
             menu.index = 0;
+            needsRedraw = true;
         } else if (e.key === 'ArrowRight' && menu.state === 'equipment') {
             menu.state = 'inventory';
             menu.index = 0;
+            needsRedraw = true;
         } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             const listSize = menu.state === 'equipment' ? 5 : this.player.inventory.length;
             if (listSize > 0) {
                 if (e.key === 'ArrowUp') menu.index = (menu.index - 1 + listSize) % listSize;
                 else menu.index = (menu.index + 1) % listSize;
+                needsRedraw = true;
             }
         } else if (e.key === 'Enter') {
             if (menu.state === 'equipment') {
                 const slots = ['weapon', 'armor', 'shield', 'shoes', 'accessory'];
                 this.player.unequip(slots[menu.index]);
             } else { // inventory
-                const item = this.player.inventory[menu.index];
-                this.player.equip(item);
+                if (this.player.inventory.length > 0) {
+                    const item = this.player.inventory[menu.index];
+                    this.player.equip(item);
+                    // After equipping, the selection might be out of bounds, so reset it.
+                    if (this.menu.equipment.index >= this.player.inventory.length) {
+                        this.menu.equipment.index = Math.max(0, this.player.inventory.length - 1);
+                    }
+                }
             }
             this.ui.updatePlayerStats(this.player);
+            needsRedraw = true;
         }
-        this.ui.drawEquipmentScreen(this.player, menu);
+
+        if (needsRedraw) {
+            this.ui.drawEquipmentScreen(this.player, menu);
+        }
     }
     
     handleShopInput(e) {
@@ -828,6 +958,38 @@ class InputHandler {
         }
         this.ui.drawShop(titleToDraw, listToDraw, menu.index);
     }
+
+    handleStockShopInput(e) {
+        const menu = this.menu.stock_shop;
+        this._navigateMenu(e, menu, this.game.stockData);
+
+        if (e.key === 'Escape') {
+            this.game.gameState = 'playing';
+            this.ui.hide('stock');
+            this.ui.show('game');
+            this.game.gameLoop();
+            return; // Return to prevent redraw
+        }
+        
+        if (e.key === 'Enter') {
+            const selectedStock = this.game.stockData[menu.index];
+            if (!selectedStock || selectedStock.loading || selectedStock.error) return;
+
+            const action = prompt(`Action for ${selectedStock.symbol}: (buy / sell)`, 'buy');
+            if (!action) return;
+
+            const quantity = parseInt(prompt('Quantity:', '1'));
+            if (isNaN(quantity) || quantity <= 0) return;
+
+            if (action.toLowerCase() === 'buy') {
+                this.game.buyStock(selectedStock.symbol, quantity);
+            } else if (action.toLowerCase() === 'sell') {
+                this.game.sellStock(selectedStock.symbol, quantity);
+            }
+        }
+
+        this.ui.drawStockScreen(this.game.stockData, menu.index);
+    }
 }
 
 
@@ -855,6 +1017,8 @@ class Game {
         this.currentMonster = null;
         this.combatState = null; // Can be 'player_turn', 'action_in_progress'
         this.saveDataExists = false;
+        this.stockData = [];
+        this.apiKey = '9VWDAR4T0Y280RE7';
 
         this.chatMessage = null;
         this.chatMessageExpiry = 0;
@@ -937,20 +1101,121 @@ class Game {
         this.gameLoop(); // Start the game loop
     }
 
+    enterStockShop() {
+        this.gameState = 'stock_shop';
+        this.inputHandler.menu.stock_shop.index = 0;
+        this.ui.hideAllScreens();
+        this.ui.show('stock');
+        this.fetchStockData();
+    }
+
+    async fetchStockData() {
+        // Set initial loading state
+        this.stockData = this.data.stocks.map(symbol => ({ symbol, loading: true }));
+        this.ui.drawStockScreen(this.stockData, this.inputHandler.menu.stock_shop.index);
+
+        const fetchedData = await Promise.all(this.data.stocks.map(async (symbol) => {
+            try {
+                const response = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${this.apiKey}`);
+                if (!response.ok) {
+                    return { symbol, error: 'Network response was not ok' };
+                }
+                const data = await response.json();
+                const quote = data['Global Quote'];
+                if (quote && Object.keys(quote).length > 0) {
+                    return {
+                        symbol: quote['01. symbol'],
+                        price: quote['05. price'],
+                        change: quote['09. change'],
+                    };
+                } else if (data.Note) {
+                    // Handle API limit note
+                    console.warn(`API Note for ${symbol}: ${data.Note}`);
+                    return { symbol, error: 'API limit likely reached' };
+                } else {
+                    return { symbol, error: 'Invalid data' };
+                }
+            } catch (error) {
+                console.error(`Error fetching ${symbol}:`, error);
+                return { symbol, error: 'Fetch failed' };
+            }
+        }));
+
+        this.stockData = fetchedData;
+        this.ui.drawStockScreen(this.stockData, this.inputHandler.menu.stock_shop.index);
+    }
+
+    buyStock(symbol, quantity) {
+        const stock = this.stockData.find(s => s.symbol === symbol);
+        if (!stock || !stock.price) {
+            this.ui.showMessage('Could not retrieve stock price.');
+            return;
+        }
+
+        const totalCost = stock.price * quantity;
+        if (this.player.money < totalCost) {
+            this.ui.showMessage('Not enough money.');
+            return;
+        }
+
+        this.player.money -= totalCost;
+        this.player.stocks[symbol] = (this.player.stocks[symbol] || 0) + quantity;
+        this.ui.updatePlayerStats(this.player);
+        this.ui.showMessage(`Bought ${quantity} share(s) of ${symbol}.`);
+    }
+
+    sellStock(symbol, quantity) {
+        const ownedQuantity = this.player.stocks[symbol] || 0;
+        if (ownedQuantity < quantity) {
+            this.ui.showMessage('You do not own enough shares.');
+            return;
+        }
+
+        const stock = this.stockData.find(s => s.symbol === symbol);
+        if (!stock || !stock.price) {
+            this.ui.showMessage('Could not retrieve stock price.');
+            return;
+        }
+
+        const totalValue = stock.price * quantity;
+        this.player.money += totalValue;
+        this.player.stocks[symbol] -= quantity;
+        if (this.player.stocks[symbol] === 0) {
+            delete this.player.stocks[symbol];
+        }
+        this.ui.updatePlayerStats(this.player);
+        this.ui.showMessage(`Sold ${quantity} share(s) of ${symbol}.`);
+    }
+
     startCombat() {
         this.gameState = 'combat';
         this.combatState = 'player_turn';
 
         // For now, we always fight a slime
         this.currentMonster = new Monster(this.data.monsters.slime);
-        this.monsterImage.src = this.currentMonster.imageSrc;
-        this.ui.hide('game');
+        this.ui.hideAllScreens();
         this.ui.show('combat');
         
         this.ui.elements.combatMonsterName.textContent = this.currentMonster.name;
-        this.ui.elements.combatMonsterImage.src = this.monsterImage.src;
         this.ui.clearCombatLog();
         this.ui.addCombatLogMessage(`A wild ${this.currentMonster.name} appeared!`);
+
+        // Draw monster sprite on canvas
+        const monsterCanvas = document.getElementById('combat-monster-canvas');
+        const monsterCtx = monsterCanvas.getContext('2d');
+        monsterCtx.imageSmoothingEnabled = false; // Preserve pixel art style
+
+        const spriteWidth = 8;
+        const spriteHeight = 9;
+        const sx = this.currentMonster.spriteIndex * spriteWidth;
+        const sy = 0;
+
+        monsterCtx.clearRect(0, 0, monsterCanvas.width, monsterCanvas.height);
+        monsterCtx.drawImage(
+            this.monsterImage, 
+            sx, sy, spriteWidth, spriteHeight,             // Source rect
+            0, 0, monsterCanvas.width, monsterCanvas.height // Destination rect (scaled)
+        );
 
         this.updateCombatUI();
 
@@ -1053,6 +1318,7 @@ class Game {
                     magic: this.player.magic,
                     inventory: this.player.inventory,
                     equipment: this.player.equipment,
+                    stocks: this.player.stocks,
                 },
                 currentMapKey: this.currentMapKey
             };
@@ -1087,6 +1353,7 @@ class Game {
             this.player.magic = p.magic;
             this.player.inventory = p.inventory;
             this.player.equipment = p.equipment;
+            this.player.stocks = p.stocks || {};
 
             this.enterMap(savedData.currentMapKey, { x: p.x, y: p.y });
 
