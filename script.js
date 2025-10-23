@@ -465,7 +465,7 @@ class UIManager {
         this.elements.level.textContent = player.level;
         this.elements.xp.textContent = player.xp;
         this.elements.xpToNextLevel.textContent = player.xpToNextLevel;
-        this.elements.money.textContent = player.money;
+        this.elements.money.textContent = Math.ceil(player.money);
         const healthPercentage = (player.currentHealth / player.maxHealth) * 100;
         this.elements.healthBar.style.width = `${healthPercentage}%`;
     }
@@ -540,7 +540,12 @@ class UIManager {
         } else {
             stocksHtml += '<ul>';
             for (const symbol in player.stocks) {
-                stocksHtml += `<li>${symbol}: ${player.stocks[symbol]} shares</li>`;
+                const batches = player.stocks[symbol];
+                if (batches && batches.length > 0) {
+                    batches.forEach(batch => {
+                        stocksHtml += `<li>${symbol}: ${batch.quantity} shares @ ${parseFloat(batch.price).toFixed(2)} G</li>`;
+                    });
+                }
             }
             stocksHtml += '</ul>';
         }
@@ -1041,7 +1046,7 @@ class Game {
             }
         };
         this.mapImage.src = 'img/map.png';
-        this.playerImage.src = 'img/player.png';
+        this.playerImage.src = 'img/male_player.png';
         this.monsterImage.src = 'img/monster.png'; // Preload monster image
         this.mapImage.onload = onImageLoad;
         this.playerImage.onload = onImageLoad;
@@ -1159,13 +1164,18 @@ class Game {
         }
 
         this.player.money -= totalCost;
-        this.player.stocks[symbol] = (this.player.stocks[symbol] || 0) + quantity;
+        if (!this.player.stocks[symbol]) {
+            this.player.stocks[symbol] = [];
+        }
+        this.player.stocks[symbol].push({ quantity: quantity, price: stock.price });
         this.ui.updatePlayerStats(this.player);
         this.ui.showMessage(`Bought ${quantity} share(s) of ${symbol}.`);
     }
 
     sellStock(symbol, quantity) {
-        const ownedQuantity = this.player.stocks[symbol] || 0;
+        const ownedBatches = this.player.stocks[symbol];
+        const ownedQuantity = ownedBatches ? ownedBatches.reduce((acc, batch) => acc + batch.quantity, 0) : 0;
+
         if (ownedQuantity < quantity) {
             this.ui.showMessage('You do not own enough shares.');
             return;
@@ -1179,10 +1189,23 @@ class Game {
 
         const totalValue = stock.price * quantity;
         this.player.money += totalValue;
-        this.player.stocks[symbol] -= quantity;
-        if (this.player.stocks[symbol] === 0) {
+
+        let remainingToSell = quantity;
+        while (remainingToSell > 0 && this.player.stocks[symbol].length > 0) {
+            const batch = this.player.stocks[symbol][0];
+            if (batch.quantity > remainingToSell) {
+                batch.quantity -= remainingToSell;
+                remainingToSell = 0;
+            } else {
+                remainingToSell -= batch.quantity;
+                this.player.stocks[symbol].shift(); // Remove the batch
+            }
+        }
+
+        if (this.player.stocks[symbol].length === 0) {
             delete this.player.stocks[symbol];
         }
+
         this.ui.updatePlayerStats(this.player);
         this.ui.showMessage(`Sold ${quantity} share(s) of ${symbol}.`);
     }
