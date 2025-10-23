@@ -216,6 +216,9 @@ class Player {
             this.x = newX;
             this.y = newY;
 
+            // Emit movement to the server
+            game.socket.emit('playerMovement', { x: this.x, y: this.y });
+
             if (game.currentMapKey === 'map_2' && Math.random() < 0.1) { // 10% chance of encounter in the forest
                 game.startCombat();
             }
@@ -275,7 +278,7 @@ class Player {
         ctx.drawImage(image, 0, 0, this.size, this.size, this.x * TILE_SIZE, this.y * TILE_SIZE, this.size, this.size);
 
         // Draw player name
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = 'blue';
         ctx.font = '10px monospace';
         ctx.textAlign = 'center';
         ctx.fillText(this.name, this.x * TILE_SIZE + TILE_SIZE / 2, this.y * TILE_SIZE - 5);
@@ -1014,6 +1017,9 @@ class Game {
         this.map = new Map(this.data.maps.starting_plains, this.canvas);
         this.inputHandler = new InputHandler(this);
 
+        this.socket = io();
+        this.otherPlayers = {};
+
         this.gameState = 'title';
         this.mapImage = new Image();
         this.playerImage = new Image();
@@ -1046,11 +1052,46 @@ class Game {
             }
         };
         this.mapImage.src = 'img/map.png';
-        this.playerImage.src = 'img/male_player.png';
+        this.playerImage.src = 'img/player.png';
         this.monsterImage.src = 'img/monster.png'; // Preload monster image
         this.mapImage.onload = onImageLoad;
         this.playerImage.onload = onImageLoad;
         this.monsterImage.onload = onImageLoad;
+
+        this.initSocketListeners();
+    }
+
+    initSocketListeners() {
+        this.socket.on('currentPlayers', (players) => {
+            Object.keys(players).forEach((id) => {
+                if (players[id].playerId === this.socket.id) {
+                    // Here you could sync the client's player object with server data if needed
+                } else {
+                    this.otherPlayers[id] = players[id];
+                }
+            });
+        });
+
+        this.socket.on('newPlayer', (playerInfo) => {
+            this.otherPlayers[playerInfo.playerId] = playerInfo;
+        });
+
+        this.socket.on('playerDisconnected', (playerId) => {
+            delete this.otherPlayers[playerId];
+        });
+
+        this.socket.on('playerMoved', (playerInfo) => {
+            if (this.otherPlayers[playerInfo.playerId]) {
+                this.otherPlayers[playerInfo.playerId].x = playerInfo.x;
+                this.otherPlayers[playerInfo.playerId].y = playerInfo.y;
+            }
+        });
+
+        this.socket.on('playerNameUpdated', (data) => {
+            if (this.otherPlayers[data.playerId]) {
+                this.otherPlayers[data.playerId].name = data.name;
+            }
+        });
     }
 
     initTitleScreen() {
@@ -1103,6 +1144,8 @@ class Game {
         this.ui.updatePlayerStats(this.player);
         this.ui.updateMapName(this.map.name);
         
+        this.socket.emit('setPlayerName', this.player.name);
+
         this.gameLoop(); // Start the game loop
     }
 
@@ -1442,6 +1485,19 @@ class Game {
         this.ctx.fillText(this.chatMessage, bubbleX + bubbleWidth / 2, bubbleY + bubbleHeight / 2);
     }
 
+    drawOtherPlayer(player) {
+        // A simple function to draw other players, similar to Player.draw
+        this.ctx.drawImage(this.playerImage, 0, 0, TILE_SIZE, TILE_SIZE, player.x * TILE_SIZE, player.y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        
+        // Draw other player's name in white
+        if (player.name) {
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '10px monospace';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(player.name, player.x * TILE_SIZE + TILE_SIZE / 2, player.y * TILE_SIZE - 5);
+        }
+    }
+
     gameLoop() {
         if (this.gameState !== 'playing') {
             return; // Stop the loop if not in playing state
@@ -1450,6 +1506,11 @@ class Game {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.map.draw(this.ctx, this.mapImage);
         this.player.draw(this.ctx, this.playerImage);
+
+        // Draw other players
+        Object.values(this.otherPlayers).forEach(player => {
+            this.drawOtherPlayer(player);
+        });
 
         if (this.chatMessage && Date.now() < this.chatMessageExpiry) {
             this.drawChatBubble();
