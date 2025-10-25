@@ -1,4 +1,3 @@
-
 // =================================================================================
 // C O N S T A N T S
 // =================================================================================
@@ -378,6 +377,7 @@ class UIManager {
     constructor() {
         this.elements = {
             // Screens
+            login: document.getElementById('login-screen'),
             title: document.getElementById('title-screen'),
             mapSelect: document.getElementById('map-select-screen'),
             game: document.getElementById('game-container'),
@@ -388,6 +388,12 @@ class UIManager {
             shop: document.getElementById('shop-menu'),
             messageBox: document.getElementById('message-box'),
             combat: document.getElementById('combat-screen'),
+            // Login UI
+            loginMessage: document.getElementById('login-message'),
+            usernameInput: document.getElementById('username-input'),
+            passwordInput: document.getElementById('password-input'),
+            loginButton: document.getElementById('login-button'),
+            registerButton: document.getElementById('register-button'),
             // Game UI
             level: document.getElementById('level'),
             xp: document.getElementById('xp'),
@@ -679,7 +685,7 @@ class InputHandler {
         this.menu = {
             title: { index: 0, items: [] },
             mapSelect: { index: 0, items: Object.values(this.data.maps) },
-            pause: { index: 0, items: [{name: 'Resume'}, {name: 'Select Stage'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Quit to Title'}] },
+            pause: { index: 0, items: [{name: 'Resume'}, {name: 'Select Stage'}, {name: 'Status'}, {name: 'Equipment'}, {name: 'Save'}, {name: 'Logout'}] },
             shop: { state: 'category', index: 0, currentList: [] },
             equipment: { state: 'equipment', index: 0 },
             combat: { index: 0, items: [{name: 'たたかう'}, {name: 'にげる'}] },
@@ -692,6 +698,7 @@ class InputHandler {
     async handleKeydown(e) {
         const state = this.game.gameState;
 
+        if (state === 'login') return; // Don't handle keydown on login screen
         if (state === 'title') this.handleTitleInput(e);
         else if (state === 'map_select') this.handleMapSelectInput(e);
         else if (state === 'playing') this.handlePlayingInput(e);
@@ -731,10 +738,10 @@ class InputHandler {
             const selection = this.menu.title.items[this.menu.title.index];
             if (selection.disabled) return;
 
-            if (selection.name === 'New Game') {
+            if (selection.name === 'Start') {
                 this.game.newGame();
-            } else if (selection.name === 'Continue') {
-                this.game.loadGame();
+            } else if (selection.name === 'Logout') {
+                this.game.logout();
             }
         }
     }
@@ -822,13 +829,8 @@ class InputHandler {
                 this.ui.drawEquipmentScreen(this.player, this.menu.equipment);
             } else if (selection === 'Save') {
                 this.game.saveGame();
-            } else if (selection === 'Quit to Title') {
-                this.game.gameState = 'title';
-                this.ui.hideAllScreens();
-                this.ui.show('title');
-                this.ui.elements.game.style.filter = 'none';
-                document.body.style.backgroundColor = '#000';
-                this.game.initTitleScreen();
+            } else if (selection === 'Logout') {
+                this.game.logout();
             }
         }
         this.ui.drawPauseMenu(this.menu.pause.items, this.menu.pause.index);
@@ -1020,14 +1022,13 @@ class Game {
         this.socket = io();
         this.otherPlayers = {};
 
-        this.gameState = 'title';
+        this.gameState = 'login';
         this.mapImage = new Image();
         this.playerImage = new Image();
         this.monsterImage = new Image();
         this.currentMapKey = 'starting_plains';
         this.currentMonster = null;
         this.combatState = null; // Can be 'player_turn', 'action_in_progress'
-        this.saveDataExists = false;
         this.stockData = [];
         this.apiKey = '9VWDAR4T0Y280RE7';
 
@@ -1040,8 +1041,10 @@ class Game {
 
     init() {
         this.ui.hideAllScreens();
-        this.ui.show('title');
-        this.initTitleScreen();
+        this.ui.show('login');
+
+        this.ui.elements.loginButton.addEventListener('click', () => this.login());
+        this.ui.elements.registerButton.addEventListener('click', () => this.register());
         
         let imagesLoaded = 0;
         const totalImages = 3; // Increased to 3
@@ -1062,6 +1065,37 @@ class Game {
     }
 
     initSocketListeners() {
+        this.socket.on('registrationSuccess', (message) => {
+            this.ui.elements.loginMessage.textContent = message;
+            this.ui.elements.loginMessage.style.color = 'green';
+        });
+
+        this.socket.on('registrationFailed', (message) => {
+            this.ui.elements.loginMessage.textContent = message;
+            this.ui.elements.loginMessage.style.color = 'red';
+        });
+
+        this.socket.on('loginSuccess', (data) => {
+            this.ui.hide('login');
+            this.ui.show('title');
+            this.gameState = 'title';
+            this.loadGame(data.playerData);
+            this.initTitleScreen();
+        });
+
+        this.socket.on('loginFailed', (message) => {
+            this.ui.elements.loginMessage.textContent = message;
+            this.ui.elements.loginMessage.style.color = 'red';
+        });
+
+        this.socket.on('saveSuccess', (message) => {
+            this.ui.showMessage(message);
+        });
+
+        this.socket.on('saveFailed', (message) => {
+            this.ui.showMessage(message);
+        });
+
         this.socket.on('currentPlayers', (players) => {
             Object.keys(players).forEach((id) => {
                 if (players[id].playerId === this.socket.id) {
@@ -1094,31 +1128,33 @@ class Game {
         });
     }
 
+    login() {
+        const username = this.ui.elements.usernameInput.value;
+        const password = this.ui.elements.passwordInput.value;
+        this.socket.emit('login', { username, password });
+    }
+
+    register() {
+        const username = this.ui.elements.usernameInput.value;
+        const password = this.ui.elements.passwordInput.value;
+        this.socket.emit('register', { username, password });
+    }
+
+    logout() {
+        window.location.reload();
+    }
+
     initTitleScreen() {
-        this.checkForSaveData();
         const menuItems = [
-            { name: 'New Game' },
-            { name: 'Continue', disabled: !this.saveDataExists }
+            { name: 'Start' },
+            { name: 'Logout' }
         ];
         this.inputHandler.menu.title.items = menuItems;
-        // Select "Continue" by default if it exists
-        this.inputHandler.menu.title.index = this.saveDataExists ? 1 : 0;
+        this.inputHandler.menu.title.index = 0;
         this.ui.drawTitleMenu(menuItems, this.inputHandler.menu.title.index);
     }
 
-    checkForSaveData() {
-        this.saveDataExists = localStorage.getItem('rpgSaveData') !== null;
-    }
-
     newGame() {
-        this.player = new Player();
-        this.inputHandler.player = this.player;
-
-        const playerName = prompt("Enter your character's name:", "Hero");
-        if (playerName) {
-            this.player.name = playerName.trim();
-        }
-
         this.gameState = 'map_select';
         this.ui.hide('title');
         this.ui.show('mapSelect');
@@ -1213,6 +1249,7 @@ class Game {
         this.player.stocks[symbol].push({ quantity: quantity, price: stock.price });
         this.ui.updatePlayerStats(this.player);
         this.ui.showMessage(`Bought ${quantity} share(s) of ${symbol}.`);
+        this.saveGame();
     }
 
     sellStock(symbol, quantity) {
@@ -1251,6 +1288,7 @@ class Game {
 
         this.ui.updatePlayerStats(this.player);
         this.ui.showMessage(`Sold ${quantity} share(s) of ${symbol}.`);
+        this.saveGame();
     }
 
     startCombat() {
@@ -1368,48 +1406,46 @@ class Game {
     }
 
     saveGame() {
-        try {
-            const saveData = {
-                player: {
-                    name: this.player.name,
-                    x: this.player.x,
-                    y: this.player.y,
-                    level: this.player.level,
-                    money: this.player.money,
-                    maxHealth: this.player.maxHealth,
-                    currentHealth: this.player.currentHealth,
-                    attack: this.player.attack,
-                    defense: this.player.defense,
-                    speed: this.player.speed,
-                    magic: this.player.magic,
-                    inventory: this.player.inventory,
-                    equipment: this.player.equipment,
-                    stocks: this.player.stocks,
-                },
-                currentMapKey: this.currentMapKey
-            };
-            localStorage.setItem('rpgSaveData', JSON.stringify(saveData));
-            this.ui.showMessage('Game Saved!');
-        } catch (error) {
-            console.error("Failed to save game:", error);
-            this.ui.showMessage('Error: Could not save game.');
-        }
+        const playerData = {
+            name: this.player.name,
+            x: this.player.x,
+            y: this.player.y,
+            level: this.player.level,
+            xp: this.player.xp,
+            xpToNextLevel: this.player.xpToNextLevel,
+            money: this.player.money,
+            maxHealth: this.player.maxHealth,
+            currentHealth: this.player.currentHealth,
+            attack: this.player.attack,
+            defense: this.player.defense,
+            speed: this.player.speed,
+            magic: this.player.magic,
+            inventory: this.player.inventory,
+            equipment: this.player.equipment,
+            stocks: this.player.stocks,
+            currentMapKey: this.currentMapKey
+        };
+        this.socket.emit('savePlayerData', playerData);
     }
 
-    loadGame() {
-        const savedString = localStorage.getItem('rpgSaveData');
-        if (!savedString) {
-            this.ui.showMessage("No save data found.");
+    loadGame(savedData) {
+        if (!savedData) {
+            this.player = new Player();
+            this.inputHandler.player = this.player;
+            const playerName = prompt("Enter your character's name:", "Hero");
+            if (playerName) {
+                this.player.name = playerName.trim();
+            }
             return;
         }
         try {
-            const savedData = JSON.parse(savedString);
-            
-            const p = savedData.player;
+            const p = savedData;
             this.player.name = p.name || 'Hero';
             this.player.x = p.x;
             this.player.y = p.y;
             this.player.level = p.level;
+            this.player.xp = p.xp;
+            this.player.xpToNextLevel = p.xpToNextLevel;
             this.player.money = p.money;
             this.player.maxHealth = p.maxHealth;
             this.player.currentHealth = p.currentHealth;
@@ -1420,14 +1456,11 @@ class Game {
             this.player.inventory = p.inventory;
             this.player.equipment = p.equipment;
             this.player.stocks = p.stocks || {};
-
-            this.enterMap(savedData.currentMapKey, { x: p.x, y: p.y });
+            this.currentMapKey = p.currentMapKey || 'starting_plains';
 
         } catch (error) {
             console.error("Failed to load game:", error);
             this.ui.showMessage('Error: Save data is corrupted.');
-            localStorage.removeItem('rpgSaveData');
-            this.initTitleScreen();
         }
     }
 

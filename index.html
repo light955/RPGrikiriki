@@ -51,6 +51,32 @@
             color: #555;
         }
 
+        #login-screen input {
+            font-size: 18px;
+            padding: 8px;
+            margin: 5px;
+            width: 250px;
+            background-color: #333;
+            border: 1px solid #fff;
+            color: #fff;
+        }
+        #login-screen button {
+            font-size: 18px;
+            padding: 10px 20px;
+            margin: 10px;
+            background-color: #555;
+            border: 1px solid #fff;
+            color: #fff;
+            cursor: pointer;
+        }
+        #login-screen button:hover {
+            background-color: #777;
+        }
+        #login-message {
+            height: 20px;
+            color: #ff0000;
+        }
+
         #equipment-screen .equipment-layout {
             display: flex;
             justify-content: space-between;
@@ -269,7 +295,23 @@
     </style>
 </head>
 <body>
-    <div id="title-screen" class="fullscreen-menu">
+    <div id="login-screen" class="fullscreen-menu">
+        <h1>Pixel RPG</h1>
+        <h2>Login</h2>
+        <p id="login-message"></p>
+        <div>
+            <input type="text" id="username-input" placeholder="Username">
+        </div>
+        <div>
+            <input type="password" id="password-input" placeholder="Password">
+        </div>
+        <div>
+            <button id="login-button">Login</button>
+            <button id="register-button">Register</button>
+        </div>
+    </div>
+
+    <div id="title-screen" class="fullscreen-menu hidden">
         <h1>Pixel RPG</h1>
         <ul id="title-menu-list"></ul>
     </div>
